@@ -116,6 +116,7 @@ final class ChatModel: ObservableObject {
     @Published var messages: [ChatMessage] = []
     @Published var sessions: [ChatSession] = []
     @Published var activeThreadID: String?
+    @Published var activeTurnID: String?
     @Published var projectPath: String?
     @Published var models: [CodexModel] = []
     @Published var selectedModelID = ""
@@ -184,6 +185,7 @@ final class ChatModel: ObservableObject {
 
     func newChat() {
         activeThreadID = nil
+        activeTurnID = nil
         messages = []
         questionAnswers = [:]
         pendingQuestion = nil
@@ -307,6 +309,7 @@ final class ChatModel: ObservableObject {
     func selectSession(_ session: ChatSession) {
         guard !isBusy else { return }
         activeThreadID = session.id
+        activeTurnID = nil
         projectPath = session.cwd
         selectedModelID = models.contains(where: { $0.id == session.modelID }) ? session.modelID : (catalogDefaultID ?? models.first?.id ?? "")
         if let model = selectedModel { selectedEffort = model.efforts.contains(where: { $0.id == session.effort }) ? session.effort : model.defaultEffort }
@@ -359,7 +362,7 @@ final class ChatModel: ObservableObject {
     func send() {
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let attachments = pendingAttachments
-        guard (!text.isEmpty || !attachments.isEmpty), !isBusy else { return }
+        guard !text.isEmpty || !attachments.isEmpty else { return }
         guard isConnected else {
             append(ChatMessage(kind: .error, text: "Codex ещё подключается. Попробуйте отправить запрос через несколько секунд."))
             return
@@ -370,6 +373,32 @@ final class ChatModel: ObservableObject {
         }
         guard let model = selectedModel else {
             append(ChatMessage(kind: .error, text: "Список моделей ещё загружается."))
+            return
+        }
+
+        if isBusy {
+            guard let activeThreadID, let activeTurnID else {
+                status = "Codex начинает ход · отправьте уточнение через секунду"
+                return
+            }
+            prompt = ""
+            pendingAttachments = []
+            append(ChatMessage(kind: .user, text: text, attachments: attachments))
+            status = "Передаю уточнение Codex…"
+            request("turn/steer", params: [
+                "threadId": activeThreadID,
+                "expectedTurnId": activeTurnID,
+                "input": turnInputs(text: text, attachments: attachments)
+            ]) { [weak self] result, error in
+                guard let self else { return }
+                if let error {
+                    self.append(ChatMessage(kind: .error, text: "Не удалось передать уточнение: \(error)"))
+                    self.status = "Codex продолжает работу"
+                } else {
+                    self.activeTurnID = result?["turnId"] as? String ?? activeTurnID
+                    self.status = "Уточнение передано · Codex продолжает работу"
+                }
+            }
             return
         }
 
@@ -406,8 +435,17 @@ final class ChatModel: ObservableObject {
     }
 
     func interrupt() {
-        guard let activeThreadID, isBusy else { return }
-        request("turn/interrupt", params: ["threadId": activeThreadID]) { _, _ in }
+        guard let activeThreadID, let activeTurnID, isBusy else { return }
+        status = "Останавливаю Codex…"
+        request("turn/interrupt", params: ["threadId": activeThreadID, "turnId": activeTurnID]) { [weak self] _, error in
+            guard let self else { return }
+            if let error {
+                self.status = "Не удалось остановить ход"
+                self.append(ChatMessage(kind: .error, text: "Не удалось остановить Codex: \(error)"))
+            } else {
+                self.status = "Остановка запрошена…"
+            }
+        }
     }
 
     func answerQuestion() {
@@ -521,7 +559,7 @@ final class ChatModel: ObservableObject {
             "summary": "detailed",
             "approvalPolicy": "never",
             "sandboxPolicy": ["type": "dangerFullAccess"]
-        ]) { [weak self] _, error in
+        ]) { [weak self] result, error in
             guard let self else { return }
             if let error {
                 if recoverMissingThread, Self.isMissingThreadError(error) {
@@ -531,6 +569,7 @@ final class ChatModel: ObservableObject {
                 }
                 return
             }
+            if let turn = result?["turn"] as? [String: Any] { self.activeTurnID = turn["id"] as? String }
             self.status = "Codex работает · \(self.selectedModel?.name ?? model) · \(self.selectedEffortTitle)"
         }
     }
@@ -655,10 +694,15 @@ final class ChatModel: ObservableObject {
         case "item/completed":
             handleItemCompleted(params)
         case "turn/started":
+            if params["threadId"] as? String == activeThreadID,
+               let turn = params["turn"] as? [String: Any] {
+                activeTurnID = turn["id"] as? String
+            }
             status = "Codex начал работу"
         case "turn/completed":
             isBusy = false
             let turn = params["turn"] as? [String: Any] ?? [:]
+            activeTurnID = nil
             if let error = turn["error"] as? [String: Any], let text = error["message"] as? String {
                 append(ChatMessage(kind: .error, text: text))
                 status = "Codex завершил ход с ошибкой"

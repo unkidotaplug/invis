@@ -250,11 +250,7 @@ struct MainView: View {
                     .background(Palette.glass, in: Circle())
                     .overlay(Circle().stroke(Palette.accent.opacity(0.18), lineWidth: 1))
                 VStack(alignment: .leading, spacing: 7) {
-                    Text(markdown(message.text))
-                        .font(.system(size: 13.5))
-                        .foregroundStyle(Palette.text.opacity(0.93))
-                        .lineSpacing(3.5)
-                        .textSelection(.enabled)
+                    CodeAwareMessage(text: message.text)
                     if message.isActive { ProgressView().controlSize(.small).tint(Palette.accent) }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -389,7 +385,6 @@ struct MainView: View {
                 }
                 .buttonStyle(.plain)
                 .help("Прикрепить изображения и файлы")
-                .disabled(model.isBusy)
 
                 Button(action: model.attachClipboardImage) {
                     Image(systemName: "photo")
@@ -400,7 +395,6 @@ struct MainView: View {
                 }
                 .buttonStyle(.plain)
                 .help("Прикрепить изображение из буфера обмена")
-                .disabled(model.isBusy)
 
                 TextField("Опиши задачу для Codex…", text: $model.prompt, axis: .vertical)
                     .font(.system(size: 13.5))
@@ -415,31 +409,35 @@ struct MainView: View {
                             _ = model.acceptDroppedAttachments(providers)
                         }
                     }
-                    .disabled(model.isBusy)
                     .padding(.vertical, 7)
                     .overlay(ArrowCursorOverlay().allowsHitTesting(false))
                     .accessibilityLabel("Сообщение для Codex")
-                Button {
-                    if model.isBusy { model.interrupt() } else { model.send() }
-                } label: {
-                    Image(systemName: model.isBusy ? "stop.fill" : "arrow.up")
+                if model.isBusy {
+                    Button(action: model.interrupt) {
+                        Image(systemName: "stop.fill")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 35, height: 35)
+                            .background(Palette.glass, in: RoundedRectangle(cornerRadius: 11))
+                            .overlay(RoundedRectangle(cornerRadius: 11).stroke(.white.opacity(0.24), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Остановить ответ")
+                    .disabled(model.activeTurnID == nil)
+                }
+                Button(action: model.send) {
+                    Image(systemName: "arrow.up")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(.white)
                         .frame(width: 35, height: 35)
-                        .background {
-                            if model.isBusy {
-                                RoundedRectangle(cornerRadius: 11).fill(Palette.glass)
-                            } else {
-                                RoundedRectangle(cornerRadius: 11).fill(Palette.accent.opacity(0.34))
-                            }
-                        }
+                        .background(RoundedRectangle(cornerRadius: 11).fill(Palette.accent.opacity(0.34)))
                         .overlay(RoundedRectangle(cornerRadius: 11).stroke(.white.opacity(0.24), lineWidth: 1))
                         .shadow(color: Palette.accent.opacity(0.08), radius: 8, y: 2)
                 }
                 .buttonStyle(.plain)
-                .help(model.isBusy ? "Остановить ответ" : "Отправить · ⌘↵")
+                .help(model.isBusy ? "Уточнить задачу · ⌘↵" : "Отправить · ⌘↵")
                 .keyboardShortcut(.return, modifiers: .command)
-                .disabled(!model.isBusy && ((model.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && model.pendingAttachments.isEmpty) || !model.isConnected))
+                .disabled((model.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && model.pendingAttachments.isEmpty) || !model.isConnected || (model.isBusy && (model.activeThreadID == nil || model.activeTurnID == nil)))
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
@@ -636,6 +634,97 @@ struct MainView: View {
 
     private func markdown(_ text: String) -> AttributedString {
         (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text)
+    }
+}
+
+private struct CodeAwareMessage: View {
+    let text: String
+
+    private enum Block {
+        case prose(String)
+        case code(language: String, source: String)
+    }
+
+    private var blocks: [Block] {
+        var result: [Block] = []
+        var prose: [String] = []
+        var code: [String] = []
+        var language = ""
+        var inCode = false
+        for line in text.components(separatedBy: .newlines) {
+            if !inCode, line.trimmingCharacters(in: .whitespaces).hasPrefix("```") {
+                let marker = line.trimmingCharacters(in: .whitespaces)
+                let lang = String(marker.dropFirst(3)).trimmingCharacters(in: .whitespaces)
+                if !prose.isEmpty { result.append(.prose(prose.joined(separator: "\n"))); prose = [] }
+                language = lang
+                code = []
+                inCode = true
+            } else if inCode, line.trimmingCharacters(in: .whitespaces).hasPrefix("```") {
+                result.append(.code(language: language, source: code.joined(separator: "\n")))
+                code = []
+                inCode = false
+            } else if inCode {
+                code.append(line)
+            } else {
+                prose.append(line)
+            }
+        }
+        if inCode { result.append(.code(language: language, source: code.joined(separator: "\n"))) }
+        if !prose.isEmpty { result.append(.prose(prose.joined(separator: "\n"))) }
+        if result.isEmpty { result.append(.prose(text)) }
+        return result
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(blocks.indices, id: \.self) { index in
+                let block = blocks[index]
+                switch block {
+                case .prose(let value):
+                    Text((try? AttributedString(markdown: value, options: .init(interpretedSyntax: .full))) ?? AttributedString(value))
+                        .font(.system(size: 13.5))
+                        .foregroundStyle(Palette.text.opacity(0.93))
+                        .lineSpacing(3.5)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                case .code(let language, let source):
+                    VStack(alignment: .leading, spacing: 0) {
+                        HStack {
+                            Text(language.isEmpty ? "КОД" : language.uppercased())
+                                .font(.system(size: 9, weight: .semibold, design: .rounded))
+                                .tracking(0.8)
+                                .foregroundStyle(Palette.muted)
+                            Spacer()
+                            Button {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(source, forType: .string)
+                            } label: {
+                                Label("Скопировать", systemImage: "doc.on.doc")
+                                    .font(.system(size: 10, weight: .medium))
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(Palette.accent)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        Rectangle().fill(Palette.line).frame(height: 1)
+                        ScrollView([.horizontal, .vertical]) {
+                            Text(source)
+                                .font(.system(size: 12, weight: .regular, design: .monospaced))
+                                .foregroundStyle(Palette.text.opacity(0.94))
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .fixedSize(horizontal: true, vertical: false)
+                                .padding(12)
+                        }
+                        .frame(maxHeight: 380)
+                    }
+                    .background(Palette.ink.opacity(0.75), in: RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Palette.accent.opacity(0.20), lineWidth: 1))
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
