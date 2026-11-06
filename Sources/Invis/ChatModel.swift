@@ -146,7 +146,8 @@ final class ChatModel: ObservableObject {
     func start() {
         guard !hasStarted else { return }
         hasStarted = true
-        projectPath = defaults.string(forKey: "inviz.projectPath")
+        let savedProjectPath = defaults.string(forKey: "inviz.projectPath")
+        projectPath = savedProjectPath.map(normalizedWorkingDirectory)
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Desktop").path
         defaults.set(projectPath, forKey: "inviz.projectPath")
         selectedModelID = defaults.string(forKey: "inviz.modelID") ?? ""
@@ -488,7 +489,7 @@ final class ChatModel: ObservableObject {
                 return ChatSession(
                     id: id,
                     title: String(preview.prefix(56)),
-                    cwd: row["cwd"] as? String ?? "",
+                    cwd: self.normalizedWorkingDirectory(row["cwd"] as? String ?? ""),
                     modelID: row["model"] as? String ?? self.catalogDefaultID ?? "",
                     effort: row["reasoningEffort"] as? String ?? "medium",
                     updatedAt: row["updatedAt"] as? TimeInterval ?? 0
@@ -834,6 +835,15 @@ final class ChatModel: ObservableObject {
             usage.longWindowMinutes = nil
             usage.longResetsAt = nil
         }
+    }
+
+    private func normalizedWorkingDirectory(_ path: String) -> String {
+        guard !path.isEmpty, !FileManager.default.fileExists(atPath: path) else { return path }
+        let renamed = URL(fileURLWithPath: path)
+            .deletingLastPathComponent()
+            .appendingPathComponent("Invis", isDirectory: true)
+            .path
+        return FileManager.default.fileExists(atPath: renamed) ? renamed : path
     }
 
     private func messagesFromTurns(_ turns: [[String: Any]]) -> [ChatMessage] {
