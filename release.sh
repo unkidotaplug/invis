@@ -27,7 +27,7 @@ cd "$PROJECT_DIR"
 git add -A
 git commit -m "release: $TAG — $MESSAGE"
 git tag -a "$TAG" -m "Инвиз $TAG"
-git push origin HEAD --tags
+git push origin HEAD "$TAG"
 gh release create "$TAG" "$ARCHIVE" --title "Инвиз $TAG" --notes "$MESSAGE"
 
 print -r -- "Готов релиз $TAG: $ARCHIVE"
