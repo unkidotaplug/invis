@@ -2,8 +2,8 @@
 import PackageDescription
 
 let package = Package(
-    name: "Inviz",
+    name: "Invis",
     platforms: [.macOS(.v13)],
-    products: [.executable(name: "Inviz", targets: ["Inviz"])],
-    targets: [.executableTarget(name: "Inviz", path: "Sources/Inviz")]
+    products: [.executable(name: "Invis", targets: ["Invis"])],
+    targets: [.executableTarget(name: "Invis", path: "Sources/Invis")]
 )

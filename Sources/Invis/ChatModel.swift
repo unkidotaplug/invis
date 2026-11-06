@@ -141,7 +141,7 @@ final class ChatModel: ObservableObject {
         do {
             try wire.start()
             request("initialize", params: [
-                "clientInfo": ["name": "inviz", "title": "Инвиз", "version": Self.appVersion],
+                "clientInfo": ["name": "invis", "title": "Invis", "version": Self.appVersion],
                 "capabilities": ["experimentalApi": true]
             ]) { [weak self] result, error in
                 guard let self else { return }
@@ -567,7 +567,7 @@ final class ChatModel: ObservableObject {
             pendingQuestion = PendingQuestion(rpcID: id, questions: [AgentQuestion(id: "elicitation", header: "Запрос сервиса", question: body, options: [], isSecret: false)])
             questionAnswers = [:]
         default:
-            wire.send(["id": id, "error": ["code": -32601, "message": "Запрос не поддерживается приложением Инвиз."]])
+            wire.send(["id": id, "error": ["code": -32601, "message": "Запрос не поддерживается приложением Invis."]])
         }
     }
 

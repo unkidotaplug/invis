@@ -3,7 +3,7 @@ set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 KIND="${1:-patch}"
-MESSAGE="${2:-Обновление Инвиз}"
+MESSAGE="${2:-Обновление Invis}"
 VERSION_FILE="$PROJECT_DIR/VERSION"
 CURRENT="$(<"$VERSION_FILE")"
 
@@ -16,18 +16,18 @@ case "$KIND" in
 esac
 NEXT="$MAJOR.$MINOR.$PATCH"
 TAG="v$NEXT"
-ARCHIVE="$PROJECT_DIR/dist/Инвиз-$NEXT-macOS.zip"
+ARCHIVE="$PROJECT_DIR/dist/Invis-$NEXT-macOS.zip"
 
 print -r -- "$NEXT" > "$VERSION_FILE"
 "$PROJECT_DIR/build-app.sh"
 mkdir -p "$PROJECT_DIR/dist"
-ditto -c -k --sequesterRsrc --keepParent "$HOME/Applications/Инвиз.app" "$ARCHIVE"
+ditto -c -k --sequesterRsrc --keepParent "$HOME/Applications/Invis.app" "$ARCHIVE"
 
 cd "$PROJECT_DIR"
 git add -A
 git commit -m "release: $TAG — $MESSAGE"
-git tag -a "$TAG" -m "Инвиз $TAG"
+git tag -a "$TAG" -m "Invis $TAG"
 git push origin HEAD "$TAG"
-gh release create "$TAG" "$ARCHIVE" --title "Инвиз $TAG" --notes "$MESSAGE"
+gh release create "$TAG" "$ARCHIVE" --title "Invis $TAG" --notes "$MESSAGE"
 
 print -r -- "Готов релиз $TAG: $ARCHIVE"

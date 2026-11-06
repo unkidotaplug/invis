@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 @main
-struct InvizApp: App {
+struct InvisApp: App {
     @StateObject private var model = ChatModel()
 
     var body: some Scene {

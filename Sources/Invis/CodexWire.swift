@@ -7,13 +7,13 @@ final class CodexWire {
 
     private var process: Process?
     private var input: FileHandle?
-    private let writeQueue = DispatchQueue(label: "ru.macboss.inviz.codex-write")
-    private let readQueue = DispatchQueue(label: "ru.macboss.inviz.codex-read")
+    private let writeQueue = DispatchQueue(label: "ru.macboss.invis.codex-write")
+    private let readQueue = DispatchQueue(label: "ru.macboss.invis.codex-read")
     private var lineBuffer = Data()
 
     func start() throws {
         guard let executable = CodexPathResolver.executableURL() else {
-            throw NSError(domain: "Inviz", code: 1, userInfo: [NSLocalizedDescriptionKey: "Не найден Codex CLI. Установите или обновите ChatGPT для macOS."])
+            throw NSError(domain: "Invis", code: 1, userInfo: [NSLocalizedDescriptionKey: "Не найден Codex CLI. Установите или обновите ChatGPT для macOS."])
         }
 
         let child = Process()
