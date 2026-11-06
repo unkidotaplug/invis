@@ -225,7 +225,15 @@ final class ChatModel: ObservableObject {
 
         request("thread/resume", params: ["threadId": session.id, "excludeTurns": true]) { [weak self] result, error in
             guard let self else { return }
-            if let error { self.status = "Не удалось открыть чат"; self.append(ChatMessage(kind: .error, text: error)); return }
+            if let error {
+                if Self.isMissingThreadError(error) {
+                    self.handleUnavailableSession(session)
+                } else {
+                    self.status = "Не удалось открыть чат"
+                    self.append(ChatMessage(kind: .error, text: error))
+                }
+                return
+            }
             if let resumed = result?["thread"] as? [String: Any] {
                 let threadModel = result?["model"] as? String ?? (resumed["model"] as? String ?? session.modelID)
                 let effort = result?["reasoningEffort"] as? String ?? session.effort
@@ -237,7 +245,15 @@ final class ChatModel: ObservableObject {
                 if self.selectedModel?.efforts.contains(where: { $0.id == effort }) == true { self.selectEffort(effort) }
             }
             self.request("thread/turns/list", params: ["threadId": session.id, "limit": 100, "sortDirection": "asc", "itemsView": "full"]) { page, pageError in
-                if let pageError { self.status = "Не удалось загрузить историю"; self.append(ChatMessage(kind: .error, text: pageError)); return }
+                if let pageError {
+                    if Self.isMissingThreadError(pageError) {
+                        self.handleUnavailableSession(session)
+                    } else {
+                        self.status = "Не удалось загрузить историю"
+                        self.append(ChatMessage(kind: .error, text: pageError))
+                    }
+                    return
+                }
                 let loaded = self.messagesFromTurns(page?["data"] as? [[String: Any]] ?? [])
                 self.messagesByThread[session.id] = loaded
                 self.messages = loaded
@@ -382,8 +398,15 @@ final class ChatModel: ObservableObject {
                     updatedAt: row["updatedAt"] as? TimeInterval ?? 0
                 )
             }
-            if restoreActive, let saved = self.defaults.string(forKey: "inviz.activeThreadID"),
-               let session = self.sessions.first(where: { $0.id == saved }) {
+            if restoreActive, let saved = self.defaults.string(forKey: "inviz.activeThreadID") {
+                let session = self.sessions.first(where: { $0.id == saved }) ?? ChatSession(
+                    id: saved,
+                    title: "Продолжить чат",
+                    cwd: self.projectPath ?? "",
+                    modelID: self.selectedModelID,
+                    effort: self.selectedEffort,
+                    updatedAt: 0
+                )
                 self.selectSession(session)
             } else if self.activeThreadID == nil {
                 self.status = self.projectPath == nil ? "Выберите папку проекта" : "Готов к работе"
@@ -391,7 +414,7 @@ final class ChatModel: ObservableObject {
         }
     }
 
-    private func startTurn(threadID: String, text: String, cwd: String, model: String, effort: String) {
+    private func startTurn(threadID: String, text: String, cwd: String, model: String, effort: String, recoverMissingThread: Bool = true) {
         request("turn/start", params: [
             "threadId": threadID,
             "input": [["type": "text", "text": text]],
@@ -403,9 +426,67 @@ final class ChatModel: ObservableObject {
             "sandboxPolicy": ["type": "dangerFullAccess"]
         ]) { [weak self] _, error in
             guard let self else { return }
-            if let error { self.failTurn(error); return }
+            if let error {
+                if recoverMissingThread, Self.isMissingThreadError(error) {
+                    self.recoverFromMissingThread(threadID: threadID, text: text, cwd: cwd, model: model, effort: effort)
+                } else {
+                    self.failTurn(error)
+                }
+                return
+            }
             self.status = "Codex работает · \(self.selectedModel?.name ?? model) · \(self.selectedEffortTitle)"
         }
+    }
+
+    private func recoverFromMissingThread(threadID: String, text: String, cwd: String, model: String, effort: String) {
+        sessions.removeAll { $0.id == threadID }
+        messagesByThread.removeValue(forKey: threadID)
+        activeThreadID = nil
+        defaults.removeObject(forKey: "inviz.activeThreadID")
+        status = "Старый чат недоступен · создаю новый"
+        append(ChatMessage(kind: .progress, text: "Codex не нашёл сохранённый чат. Переношу запрос в новую переписку."))
+
+        request("thread/start", params: [
+            "model": model,
+            "cwd": cwd,
+            "sandbox": "danger-full-access",
+            "approvalPolicy": "never"
+        ]) { [weak self] result, error in
+            guard let self else { return }
+            if let error { self.failTurn(error); return }
+            guard let thread = result?["thread"] as? [String: Any], let replacementID = thread["id"] as? String else {
+                self.failTurn("Не удалось создать новый чат для повторного запроса.")
+                return
+            }
+
+            self.activeThreadID = replacementID
+            self.defaults.set(replacementID, forKey: "inviz.activeThreadID")
+            let session = ChatSession(
+                id: replacementID,
+                title: String(text.prefix(56)),
+                cwd: cwd,
+                modelID: model,
+                effort: effort,
+                updatedAt: Date().timeIntervalSince1970
+            )
+            self.sessions.insert(session, at: 0)
+            self.messagesByThread[replacementID] = self.messages
+            self.startTurn(threadID: replacementID, text: text, cwd: cwd, model: model, effort: effort, recoverMissingThread: false)
+        }
+    }
+
+    private func handleUnavailableSession(_ session: ChatSession) {
+        sessions.removeAll { $0.id == session.id }
+        messagesByThread.removeValue(forKey: session.id)
+        activeThreadID = nil
+        defaults.removeObject(forKey: "inviz.activeThreadID")
+        messages = []
+        status = "Эта переписка больше недоступна · начните новый чат"
+        append(ChatMessage(kind: .error, text: "Codex больше не находит эту переписку. Создайте новый чат и отправьте запрос повторно."))
+    }
+
+    private static func isMissingThreadError(_ error: String) -> Bool {
+        error.localizedCaseInsensitiveContains("thread not found")
     }
 
     private func request(_ method: String, params: [String: Any], completion: @escaping ([String: Any]?, String?) -> Void) {
