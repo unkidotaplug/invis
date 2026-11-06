@@ -24,7 +24,7 @@ mkdir -p "$PROJECT_DIR/dist"
 ditto -c -k --sequesterRsrc --keepParent "$HOME/Applications/Invis.app" "$ARCHIVE"
 
 cd "$PROJECT_DIR"
-git add -A
+git add -A -- .gitignore Package.swift README.md VERSION build-app.sh release.sh Sources
 git commit -m "release: $TAG — $MESSAGE"
 git tag -a "$TAG" -m "Invis $TAG"
 git push origin HEAD "$TAG"

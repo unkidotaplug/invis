@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 private enum Palette {
     static let ink = Color(red: 8/255, green: 15/255, blue: 25/255)
@@ -14,6 +15,7 @@ private enum Palette {
 struct MainView: View {
     @ObservedObject var model: ChatModel
     @FocusState private var composerFocused: Bool
+    @State private var isDropTargeted = false
 
     var body: some View {
         ZStack {
@@ -223,14 +225,21 @@ struct MainView: View {
         case .user:
             HStack {
                 Spacer(minLength: 60)
-                Text(markdown(message.text))
-                    .font(.system(size: 13.5))
-                    .foregroundStyle(.white)
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .background(Palette.glass.opacity(0.88), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Palette.accent.opacity(0.24), lineWidth: 1))
+                VStack(alignment: .trailing, spacing: 8) {
+                    if !message.text.isEmpty {
+                        Text(markdown(message.text))
+                            .font(.system(size: 13.5))
+                            .foregroundStyle(.white)
+                            .textSelection(.enabled)
+                    }
+                    ForEach(message.attachments) { attachment in
+                        attachmentChip(attachment, compact: false, removable: false)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(Palette.glass.opacity(0.88), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Palette.accent.opacity(0.24), lineWidth: 1))
             }
         case .assistant:
             HStack(alignment: .top, spacing: 11) {
@@ -359,13 +368,53 @@ struct MainView: View {
                 .help(model.status)
             }
 
+            if !model.pendingAttachments.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(model.pendingAttachments) { attachment in
+                            attachmentChip(attachment, compact: true, removable: true)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+
             HStack(alignment: .bottom, spacing: 10) {
+                Button(action: model.chooseAttachments) {
+                    Image(systemName: "paperclip")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(Palette.accent)
+                        .frame(width: 30, height: 36)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Прикрепить изображения и файлы")
+                .disabled(model.isBusy)
+
+                Button(action: model.attachClipboardImage) {
+                    Image(systemName: "photo")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(Palette.accent)
+                        .frame(width: 27, height: 36)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Прикрепить изображение из буфера обмена")
+                .disabled(model.isBusy)
+
                 TextField("Опиши задачу для Codex…", text: $model.prompt, axis: .vertical)
                     .font(.system(size: 13.5))
                     .lineLimit(1...6)
                     .textFieldStyle(.plain)
                     .focused($composerFocused)
                     .onSubmit { model.send() }
+                    .onPasteCommand(of: [UTType.image, UTType.fileURL]) { providers in
+                        if providers.contains(where: { $0.hasItemConformingToTypeIdentifier(UTType.image.identifier) }) {
+                            model.attachClipboardImage()
+                        } else {
+                            _ = model.acceptDroppedAttachments(providers)
+                        }
+                    }
                     .disabled(model.isBusy)
                     .padding(.vertical, 7)
                     .overlay(ArrowCursorOverlay().allowsHitTesting(false))
@@ -390,7 +439,7 @@ struct MainView: View {
                 .buttonStyle(.plain)
                 .help(model.isBusy ? "Остановить ответ" : "Отправить · ⌘↵")
                 .keyboardShortcut(.return, modifiers: .command)
-                .disabled(!model.isBusy && (model.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.isConnected))
+                .disabled(!model.isBusy && ((model.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && model.pendingAttachments.isEmpty) || !model.isConnected))
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
@@ -427,9 +476,65 @@ struct MainView: View {
         .padding(.bottom, 14)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(LinearGradient(colors: [.white.opacity(0.20), Palette.accent.opacity(0.12), .white.opacity(0.07)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1))
+        .overlay {
+            if isDropTargeted {
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(Palette.accent.opacity(0.55), lineWidth: 2)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 12)
+            }
+        }
+        .onDrop(of: [UTType.fileURL.identifier], isTargeted: $isDropTargeted) { providers in
+            model.acceptDroppedAttachments(providers)
+        }
         .shadow(color: .black.opacity(0.24), radius: 24, y: 9)
         .padding(.horizontal, 14)
         .padding(.bottom, 12)
+    }
+
+    private func attachmentChip(_ attachment: ChatAttachment, compact: Bool, removable: Bool) -> some View {
+        let thumbnailSize: CGFloat = compact ? 34 : 92
+        return HStack(spacing: 8) {
+            if attachment.isImage, attachment.url.isFileURL, let image = NSImage(contentsOf: attachment.url) {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: thumbnailSize, height: thumbnailSize)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            } else {
+                Image(systemName: attachment.isImage ? "photo" : "doc.text")
+                    .font(.system(size: compact ? 14 : 18, weight: .medium))
+                    .foregroundStyle(Palette.accent)
+                    .frame(width: thumbnailSize, height: thumbnailSize)
+                    .background(Palette.ink.opacity(0.72), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                Text(attachment.name)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Palette.text)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text(attachment.isImage ? "Изображение" : "Файл")
+                    .font(.system(size: 9))
+                    .foregroundStyle(Palette.muted)
+            }
+            .frame(maxWidth: compact ? 138 : 180, alignment: .leading)
+
+            if removable {
+                Button { model.removeAttachment(attachment) } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Palette.muted)
+                }
+                .buttonStyle(.plain)
+                .help("Убрать вложение")
+            }
+        }
+        .padding(6)
+        .background(Palette.glass.opacity(0.92), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Palette.accent.opacity(0.16), lineWidth: 1))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(attachment.name)
     }
 
     private var modelMenu: some View {

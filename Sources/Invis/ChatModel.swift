@@ -1,5 +1,7 @@
 import SwiftUI
 import Foundation
+import AppKit
+import UniformTypeIdentifiers
 
 struct ReasoningChoice: Identifiable, Hashable {
     let id: String
@@ -35,18 +37,38 @@ struct ChatSession: Identifiable, Hashable {
     var updatedAt: TimeInterval
 }
 
+struct ChatAttachment: Identifiable, Equatable {
+    let id: UUID
+    let url: URL
+    let isImage: Bool
+
+    init(id: UUID = UUID(), url: URL, isImage: Bool? = nil) {
+        self.id = id
+        self.url = url
+        if let isImage {
+            self.isImage = isImage
+        } else {
+            self.isImage = UTType(filenameExtension: url.pathExtension)?.conforms(to: .image) == true
+        }
+    }
+
+    var name: String { url.lastPathComponent }
+}
+
 struct ChatMessage: Identifiable, Equatable {
     enum Kind: Equatable { case user, assistant, progress, error }
     let id: String
     let kind: Kind
     var text: String
     var isActive: Bool
+    var attachments: [ChatAttachment]
 
-    init(id: String = UUID().uuidString, kind: Kind, text: String, isActive: Bool = false) {
+    init(id: String = UUID().uuidString, kind: Kind, text: String, isActive: Bool = false, attachments: [ChatAttachment] = []) {
         self.id = id
         self.kind = kind
         self.text = text
         self.isActive = isActive
+        self.attachments = attachments
     }
 }
 
@@ -105,6 +127,7 @@ final class ChatModel: ObservableObject {
     @Published var pendingQuestion: PendingQuestion?
     @Published var pendingApproval: PendingApproval?
     @Published var questionAnswers: [String: String] = [:]
+    @Published var pendingAttachments: [ChatAttachment] = []
 
     private let wire = CodexWire()
     private var nextRequestID = 1
@@ -210,6 +233,76 @@ final class ChatModel: ObservableObject {
         }
     }
 
+    func chooseAttachments() {
+        let panel = NSOpenPanel()
+        panel.title = "Прикрепить изображения и файлы"
+        panel.prompt = "Прикрепить"
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = true
+        guard panel.runModal() == .OK else { return }
+        addAttachments(panel.urls)
+    }
+
+    func attachClipboardImage() {
+        guard let image = NSImage(pasteboard: .general),
+              let tiff = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiff),
+              let png = bitmap.representation(using: .png, properties: [:]) else {
+            status = "В буфере обмена нет изображения"
+            return
+        }
+
+        do {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("InvisAttachments", isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let url = directory.appendingPathComponent("Снимок-\(UUID().uuidString).png")
+            try png.write(to: url, options: .atomic)
+            addAttachments([url], isImage: true)
+        } catch {
+            status = "Не удалось добавить изображение: \(error.localizedDescription)"
+        }
+    }
+
+    func acceptDroppedAttachments(_ providers: [NSItemProvider]) -> Bool {
+        let fileURLType = UTType.fileURL.identifier
+        let matching = providers.filter { $0.hasItemConformingToTypeIdentifier(fileURLType) }
+        guard !matching.isEmpty else { return false }
+        for provider in matching {
+            provider.loadItem(forTypeIdentifier: fileURLType, options: nil) { [weak self] item, _ in
+                let url: URL?
+                if let value = item as? URL {
+                    url = value
+                } else if let data = item as? Data {
+                    url = NSURL(absoluteURLWithDataRepresentation: data, relativeTo: nil) as URL
+                } else if let value = item as? String {
+                    url = URL(string: value)
+                } else {
+                    url = nil
+                }
+                guard let url, url.isFileURL else { return }
+                DispatchQueue.main.async { self?.addAttachments([url]) }
+            }
+        }
+        return true
+    }
+
+    func removeAttachment(_ attachment: ChatAttachment) {
+        pendingAttachments.removeAll { $0.id == attachment.id }
+    }
+
+    private func addAttachments(_ urls: [URL], isImage: Bool? = nil) {
+        let additions = urls
+            .filter { $0.isFileURL && FileManager.default.fileExists(atPath: $0.path) }
+            .map { ChatAttachment(url: $0, isImage: isImage) }
+        for attachment in additions where !pendingAttachments.contains(where: { $0.url.standardizedFileURL == attachment.url.standardizedFileURL }) {
+            pendingAttachments.append(attachment)
+        }
+        if !additions.isEmpty {
+            status = "Вложений: \(pendingAttachments.count)"
+        }
+    }
+
     func selectSession(_ session: ChatSession) {
         guard !isBusy else { return }
         activeThreadID = session.id
@@ -264,7 +357,8 @@ final class ChatModel: ObservableObject {
 
     func send() {
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !isBusy else { return }
+        let attachments = pendingAttachments
+        guard (!text.isEmpty || !attachments.isEmpty), !isBusy else { return }
         guard isConnected else {
             append(ChatMessage(kind: .error, text: "Codex ещё подключается. Попробуйте отправить запрос через несколько секунд."))
             return
@@ -279,12 +373,13 @@ final class ChatModel: ObservableObject {
         }
 
         prompt = ""
-        append(ChatMessage(kind: .user, text: text))
+        pendingAttachments = []
+        append(ChatMessage(kind: .user, text: text, attachments: attachments))
         isBusy = true
         status = "Отправляю запрос · \(model.name) · \(selectedEffortTitle)"
 
         if let activeThreadID {
-            startTurn(threadID: activeThreadID, text: text, cwd: projectPath, model: model.id, effort: selectedEffort)
+            startTurn(threadID: activeThreadID, text: text, attachments: attachments, cwd: projectPath, model: model.id, effort: selectedEffort)
             return
         }
 
@@ -301,10 +396,11 @@ final class ChatModel: ObservableObject {
             }
             self.activeThreadID = threadID
             self.defaults.set(threadID, forKey: "inviz.activeThreadID")
-            let session = ChatSession(id: threadID, title: String(text.prefix(56)), cwd: projectPath, modelID: model.id, effort: self.selectedEffort, updatedAt: Date().timeIntervalSince1970)
+            let titleSource = text.isEmpty ? attachments.map(\.name).joined(separator: ", ") : text
+            let session = ChatSession(id: threadID, title: String(titleSource.prefix(56)), cwd: projectPath, modelID: model.id, effort: self.selectedEffort, updatedAt: Date().timeIntervalSince1970)
             self.sessions.insert(session, at: 0)
             self.messagesByThread[threadID] = self.messages
-            self.startTurn(threadID: threadID, text: text, cwd: projectPath, model: model.id, effort: self.selectedEffort)
+            self.startTurn(threadID: threadID, text: text, attachments: attachments, cwd: projectPath, model: model.id, effort: self.selectedEffort)
         }
     }
 
@@ -414,10 +510,10 @@ final class ChatModel: ObservableObject {
         }
     }
 
-    private func startTurn(threadID: String, text: String, cwd: String, model: String, effort: String, recoverMissingThread: Bool = true) {
+    private func startTurn(threadID: String, text: String, attachments: [ChatAttachment] = [], cwd: String, model: String, effort: String, recoverMissingThread: Bool = true) {
         request("turn/start", params: [
             "threadId": threadID,
-            "input": [["type": "text", "text": text]],
+            "input": turnInputs(text: text, attachments: attachments),
             "cwd": cwd,
             "model": model,
             "effort": effort,
@@ -428,7 +524,7 @@ final class ChatModel: ObservableObject {
             guard let self else { return }
             if let error {
                 if recoverMissingThread, Self.isMissingThreadError(error) {
-                    self.recoverFromMissingThread(threadID: threadID, text: text, cwd: cwd, model: model, effort: effort)
+                    self.recoverFromMissingThread(threadID: threadID, text: text, attachments: attachments, cwd: cwd, model: model, effort: effort)
                 } else {
                     self.failTurn(error)
                 }
@@ -438,7 +534,7 @@ final class ChatModel: ObservableObject {
         }
     }
 
-    private func recoverFromMissingThread(threadID: String, text: String, cwd: String, model: String, effort: String) {
+    private func recoverFromMissingThread(threadID: String, text: String, attachments: [ChatAttachment], cwd: String, model: String, effort: String) {
         sessions.removeAll { $0.id == threadID }
         messagesByThread.removeValue(forKey: threadID)
         activeThreadID = nil
@@ -463,7 +559,7 @@ final class ChatModel: ObservableObject {
             self.defaults.set(replacementID, forKey: "inviz.activeThreadID")
             let session = ChatSession(
                 id: replacementID,
-                title: String(text.prefix(56)),
+                title: String((text.isEmpty ? attachments.map(\.name).joined(separator: ", ") : text).prefix(56)),
                 cwd: cwd,
                 modelID: model,
                 effort: effort,
@@ -471,8 +567,28 @@ final class ChatModel: ObservableObject {
             )
             self.sessions.insert(session, at: 0)
             self.messagesByThread[replacementID] = self.messages
-            self.startTurn(threadID: replacementID, text: text, cwd: cwd, model: model, effort: effort, recoverMissingThread: false)
+            self.startTurn(threadID: replacementID, text: text, attachments: attachments, cwd: cwd, model: model, effort: effort, recoverMissingThread: false)
         }
+    }
+
+    private func turnInputs(text: String, attachments: [ChatAttachment]) -> [[String: Any]] {
+        let images = attachments.filter(\.isImage)
+        let files = attachments.filter { !$0.isImage }
+        var requestText = text
+        if requestText.isEmpty {
+            requestText = files.isEmpty
+                ? "Проанализируй прикреплённые изображения и выполни задачу по их содержимому."
+                : "Прочитай приложенные файлы и выполни задачу по их содержимому."
+        }
+        if !files.isEmpty {
+            let manifest = files.map { "- \($0.url.path)" }.joined(separator: "\n")
+            requestText += "\n\n[Invis attached files]\n\(manifest)\nПрочитай эти файлы и используй их содержимое в задаче."
+        }
+
+        var inputs: [[String: Any]] = []
+        if !requestText.isEmpty { inputs.append(["type": "text", "text": requestText]) }
+        inputs.append(contentsOf: images.map { ["type": "localImage", "path": $0.url.path, "detail": "auto"] })
+        return inputs
     }
 
     private func handleUnavailableSession(_ session: ChatSession) {
@@ -730,8 +846,29 @@ final class ChatModel: ObservableObject {
                 switch type {
                 case "userMessage":
                     let content = item["content"] as? [[String: Any]] ?? []
-                    let text = content.compactMap { $0["text"] as? String }.joined(separator: "\n")
-                    if !text.isEmpty { loaded.append(ChatMessage(id: id, kind: .user, text: text)) }
+                    let wireText = content.compactMap { $0["text"] as? String }.joined(separator: "\n")
+                    let marker = "\n\n[Invis attached files]\n"
+                    var text = wireText
+                    var attachments = content.compactMap { row -> ChatAttachment? in
+                        guard let type = row["type"] as? String,
+                              type == "localImage" || type == "image",
+                              let path = row["path"] as? String else { return nil }
+                        return ChatAttachment(url: URL(fileURLWithPath: path), isImage: true)
+                    }
+                    if let range = wireText.range(of: marker) {
+                        text = String(wireText[..<range.lowerBound])
+                        let manifest = wireText[range.upperBound...]
+                        let paths = manifest.split(whereSeparator: \.isNewline)
+                            .compactMap { line -> String? in
+                                let value = String(line)
+                                guard value.hasPrefix("- ") else { return nil }
+                                return String(value.dropFirst(2))
+                            }
+                        attachments.append(contentsOf: paths.map { ChatAttachment(url: URL(fileURLWithPath: $0), isImage: false) })
+                    }
+                    if !text.isEmpty || !attachments.isEmpty {
+                        loaded.append(ChatMessage(id: id, kind: .user, text: text, attachments: attachments))
+                    }
                 case "agentMessage":
                     let text = item["text"] as? String ?? ""
                     if !text.isEmpty { loaded.append(ChatMessage(id: id, kind: .assistant, text: text)) }
