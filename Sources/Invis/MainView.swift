@@ -2,10 +2,9 @@ import SwiftUI
 import AppKit
 
 private enum Palette {
-    static let ink = Color(red: 0.035, green: 0.035, blue: 0.055)
-    static let violet = Color(red: 0.56, green: 0.40, blue: 1.0)
-    static let violetLight = Color(red: 0.73, green: 0.62, blue: 1.0)
-    static let orange = Color(red: 1.0, green: 0.49, blue: 0.25)
+    static let ink = Color(red: 8/255, green: 15/255, blue: 25/255)
+    static let glass = Color(red: 17/255, green: 30/255, blue: 44/255)
+    static let accent = Color(red: 96/255, green: 117/255, blue: 141/255)
     static let text = Color.white.opacity(0.94)
     static let muted = Color.white.opacity(0.55)
     static let faint = Color.white.opacity(0.34)
@@ -41,9 +40,9 @@ struct MainView: View {
     private var background: some View {
         ZStack {
             Palette.ink
-            RadialGradient(colors: [Palette.violet.opacity(0.28), .clear], center: .topTrailing, startRadius: 10, endRadius: 520)
-            RadialGradient(colors: [Palette.orange.opacity(0.17), .clear], center: .bottomLeading, startRadius: 5, endRadius: 440)
-            LinearGradient(colors: [.white.opacity(0.035), .clear, Palette.violet.opacity(0.035)], startPoint: .topLeading, endPoint: .bottomTrailing)
+            RadialGradient(colors: [Palette.glass.opacity(0.55), .clear], center: .topTrailing, startRadius: 10, endRadius: 520)
+            RadialGradient(colors: [Palette.accent.opacity(0.08), .clear], center: .bottomLeading, startRadius: 5, endRadius: 440)
+            LinearGradient(colors: [.white.opacity(0.025), .clear, Palette.accent.opacity(0.025)], startPoint: .topLeading, endPoint: .bottomTrailing)
         }
         .ignoresSafeArea()
     }
@@ -65,8 +64,8 @@ struct MainView: View {
                 .foregroundStyle(Palette.text)
                 .padding(.horizontal, 13)
                 .frame(height: 44)
-                .background(LinearGradient(colors: [Palette.violet.opacity(0.30), Palette.orange.opacity(0.12)], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 15))
-                .overlay(RoundedRectangle(cornerRadius: 15).stroke(.white.opacity(0.18), lineWidth: 1))
+                .background(Palette.glass.opacity(0.88), in: RoundedRectangle(cornerRadius: 15))
+                .overlay(RoundedRectangle(cornerRadius: 15).stroke(Palette.accent.opacity(0.18), lineWidth: 1))
             }
             .buttonStyle(.plain)
             .help("Создать отдельную переписку")
@@ -96,7 +95,7 @@ struct MainView: View {
             Spacer(minLength: 0)
 
             HStack(spacing: 8) {
-                Circle().fill(model.isConnected ? Color.green : Palette.orange).frame(width: 7, height: 7)
+                Circle().fill(Palette.accent).frame(width: 7, height: 7)
                 Text(model.isConnected ? "Codex подключён" : "Подключаю Codex")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(Palette.muted)
@@ -110,7 +109,7 @@ struct MainView: View {
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 23, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 23, style: .continuous)
-                .stroke(LinearGradient(colors: [.white.opacity(0.20), Palette.violet.opacity(0.11), .white.opacity(0.05)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
+                .stroke(LinearGradient(colors: [.white.opacity(0.18), Palette.accent.opacity(0.12), .white.opacity(0.05)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
         }
         .shadow(color: .black.opacity(0.20), radius: 24, y: 12)
     }
@@ -120,7 +119,7 @@ struct MainView: View {
             HStack(alignment: .top, spacing: 9) {
                 Image(systemName: model.activeThreadID == session.id ? "bubble.left.and.bubble.right.fill" : "bubble.left")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(model.activeThreadID == session.id ? Palette.violetLight : Palette.muted)
+                    .foregroundStyle(model.activeThreadID == session.id ? Palette.accent : Palette.muted)
                     .frame(width: 16)
                     .padding(.top, 2)
                 VStack(alignment: .leading, spacing: 5) {
@@ -187,12 +186,12 @@ struct MainView: View {
     private var welcome: some View {
         VStack(spacing: 18) {
             ZStack {
-                Circle().fill(Palette.violet.opacity(0.17)).frame(width: 76, height: 76).blur(radius: 15)
+                Circle().fill(Palette.accent.opacity(0.08)).frame(width: 76, height: 76).blur(radius: 15)
                 Circle().fill(.ultraThinMaterial).frame(width: 58, height: 58)
                     .overlay(Circle().stroke(.white.opacity(0.22), lineWidth: 1))
                 Image(systemName: "sparkle")
                     .font(.system(size: 23, weight: .medium))
-                    .foregroundStyle(LinearGradient(colors: [Palette.violetLight, Palette.orange], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .foregroundStyle(Palette.accent)
             }
             VStack(spacing: 7) {
                 Text(model.activeThreadID == nil ? "Что создаём?" : "Продолжаем чат")
@@ -206,7 +205,7 @@ struct MainView: View {
                     .frame(maxWidth: 340)
             }
             HStack(spacing: 7) {
-                Image(systemName: "folder.fill").foregroundStyle(Palette.orange)
+                Image(systemName: "folder.fill").foregroundStyle(Palette.accent)
                 Text(model.currentProjectName).lineLimit(1)
             }
             .font(.system(size: 11, weight: .medium))
@@ -230,35 +229,35 @@ struct MainView: View {
                     .textSelection(.enabled)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
-                    .background(LinearGradient(colors: [Palette.violet.opacity(0.66), Color(red: 0.38, green: 0.28, blue: 0.78).opacity(0.79)], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.white.opacity(0.16), lineWidth: 1))
+                    .background(Palette.glass.opacity(0.88), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Palette.accent.opacity(0.24), lineWidth: 1))
             }
         case .assistant:
             HStack(alignment: .top, spacing: 11) {
                 Image(systemName: "sparkle")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Palette.violetLight)
+                    .foregroundStyle(Palette.accent)
                     .frame(width: 25, height: 25)
-                    .background(Palette.violet.opacity(0.18), in: Circle())
-                    .overlay(Circle().stroke(Palette.violet.opacity(0.27), lineWidth: 1))
+                    .background(Palette.glass, in: Circle())
+                    .overlay(Circle().stroke(Palette.accent.opacity(0.18), lineWidth: 1))
                 VStack(alignment: .leading, spacing: 7) {
                     Text(markdown(message.text))
                         .font(.system(size: 13.5))
                         .foregroundStyle(Palette.text.opacity(0.93))
                         .lineSpacing(3.5)
                         .textSelection(.enabled)
-                    if message.isActive { ProgressView().controlSize(.small).tint(Palette.violetLight) }
+                    if message.isActive { ProgressView().controlSize(.small).tint(Palette.accent) }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         case .progress:
             HStack(alignment: .top, spacing: 10) {
                 if message.isActive {
-                    ProgressView().controlSize(.small).tint(Palette.orange).frame(width: 22, height: 22)
+                    ProgressView().controlSize(.small).tint(Palette.accent).frame(width: 22, height: 22)
                 } else {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 14))
-                        .foregroundStyle(Color.green.opacity(0.83))
+                        .foregroundStyle(Palette.accent)
                         .frame(width: 22, height: 22)
                 }
                 Text(markdown(message.text))
@@ -273,20 +272,20 @@ struct MainView: View {
             .overlay(RoundedRectangle(cornerRadius: 13).stroke(.white.opacity(0.08), lineWidth: 1))
         case .error:
             HStack(alignment: .top, spacing: 9) {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Palette.orange).font(.system(size: 13))
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Palette.accent).font(.system(size: 13))
                 Text(message.text).font(.system(size: 12)).foregroundStyle(Palette.text.opacity(0.88)).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(12)
-            .background(Palette.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 13))
-            .overlay(RoundedRectangle(cornerRadius: 13).stroke(Palette.orange.opacity(0.24), lineWidth: 1))
+            .background(Palette.accent.opacity(0.10), in: RoundedRectangle(cornerRadius: 13))
+            .overlay(RoundedRectangle(cornerRadius: 13).stroke(Palette.accent.opacity(0.24), lineWidth: 1))
         }
     }
 
     private func questionCard(_ pending: PendingQuestion) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
-                Image(systemName: "bubble.left.and.text.bubble.right.fill").foregroundStyle(Palette.violetLight)
+                Image(systemName: "bubble.left.and.text.bubble.right.fill").foregroundStyle(Palette.accent)
                 Text("Codex спрашивает").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.text)
             }
             ForEach(pending.questions) { question in
@@ -322,13 +321,13 @@ struct MainView: View {
             }
         }
         .padding(16)
-        .glassCard(radius: 18, accent: Palette.violet)
+        .glassCard(radius: 18, accent: Palette.accent)
     }
 
     private func approvalCard(_ request: PendingApproval) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("Codex запрашивает доступ", systemImage: "lock.open.fill")
-                .font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.orange)
+                .font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.accent)
             Text(request.reason).font(.system(size: 12)).foregroundStyle(Palette.text)
             if !request.command.isEmpty {
                 Text(request.command).font(.system(size: 10, design: .monospaced)).foregroundStyle(Palette.muted).textSelection(.enabled)
@@ -341,7 +340,7 @@ struct MainView: View {
             }
         }
         .padding(16)
-        .glassCard(radius: 18, accent: Palette.orange)
+        .glassCard(radius: 18, accent: Palette.accent)
     }
 
     private var composer: some View {
@@ -351,7 +350,7 @@ struct MainView: View {
                 effortMenu
                 Spacer(minLength: 0)
                 HStack(spacing: 6) {
-                    Circle().fill(model.isBusy ? Palette.orange : Color.green).frame(width: 6, height: 6)
+                    Circle().fill(Palette.accent).frame(width: 6, height: 6)
                     Text(model.isBusy ? model.status : "Готов")
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(Palette.muted)
@@ -380,13 +379,13 @@ struct MainView: View {
                         .frame(width: 35, height: 35)
                         .background {
                             if model.isBusy {
-                                RoundedRectangle(cornerRadius: 11).fill(Palette.orange.opacity(0.85))
+                                RoundedRectangle(cornerRadius: 11).fill(Palette.glass)
                             } else {
-                                RoundedRectangle(cornerRadius: 11).fill(LinearGradient(colors: [Palette.violet, Palette.orange.opacity(0.88)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                RoundedRectangle(cornerRadius: 11).fill(Palette.accent.opacity(0.34))
                             }
                         }
                         .overlay(RoundedRectangle(cornerRadius: 11).stroke(.white.opacity(0.24), lineWidth: 1))
-                        .shadow(color: Palette.violet.opacity(0.24), radius: 12, y: 4)
+                        .shadow(color: Palette.accent.opacity(0.08), radius: 8, y: 2)
                 }
                 .buttonStyle(.plain)
                 .help(model.isBusy ? "Остановить ответ" : "Отправить · ⌘↵")
@@ -396,14 +395,14 @@ struct MainView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             .background(.black.opacity(0.17), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(composerFocused ? Palette.violetLight.opacity(0.60) : .white.opacity(0.12), lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(composerFocused ? Palette.accent.opacity(0.28) : .white.opacity(0.12), lineWidth: 1))
 
             HStack(spacing: 8) {
                 Button(action: model.chooseProject) {
                     HStack(spacing: 7) {
                         Image(systemName: "folder")
                             .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Palette.orange)
+                            .foregroundStyle(Palette.accent)
                         Text(model.currentProjectName)
                             .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(Palette.text.opacity(0.85))
@@ -427,7 +426,7 @@ struct MainView: View {
         .padding(.top, 12)
         .padding(.bottom, 14)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(LinearGradient(colors: [.white.opacity(0.20), Palette.violet.opacity(0.12), .white.opacity(0.07)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(LinearGradient(colors: [.white.opacity(0.20), Palette.accent.opacity(0.12), .white.opacity(0.07)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1))
         .shadow(color: .black.opacity(0.24), radius: 24, y: 9)
         .padding(.horizontal, 14)
         .padding(.bottom, 12)
@@ -445,7 +444,7 @@ struct MainView: View {
             }
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: "sparkles").foregroundStyle(Palette.violetLight)
+                Image(systemName: "sparkles").foregroundStyle(Palette.accent)
                 Text(model.selectedModel?.name ?? "Модель").foregroundStyle(Palette.text)
                 Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).foregroundStyle(Palette.faint)
             }
@@ -470,7 +469,7 @@ struct MainView: View {
             }
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: "dial.low.fill").foregroundStyle(Palette.orange)
+                Image(systemName: "dial.low.fill").foregroundStyle(Palette.accent)
                 Text(model.selectedEffortTitle).foregroundStyle(Palette.text)
                 Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold)).foregroundStyle(Palette.faint)
             }
@@ -485,24 +484,25 @@ struct MainView: View {
 
     private var usageMenu: some View {
         Menu {
-            if let percent = model.usage.shortPercent {
-                Text("5 часов: \(percent)% использовано")
-            }
-            if let percent = model.usage.longPercent {
-                Text("7 дней: \(percent)% использовано")
+            Section("Общий лимит Codex · \(model.usage.plan)") {
+                if let percent = model.usage.shortPercent {
+                    Text(limitSummary(percent, duration: model.usage.shortWindowMinutes, fallback: "Короткое окно"))
+                }
+                if let percent = model.usage.longPercent {
+                    Text(limitSummary(percent, duration: model.usage.longWindowMinutes, fallback: "Длинное окно"))
+                }
             }
             if let reset = model.usage.shortResetsAt {
-                Text("Короткое окно сбросится: \(Date(timeIntervalSince1970: reset).formatted(date: .omitted, time: .shortened))")
+                Text("Сброс \(windowTitle(model.usage.shortWindowMinutes, fallback: "короткого окна")): \(Date(timeIntervalSince1970: reset).formatted(date: .omitted, time: .shortened))")
             }
             if let reset = model.usage.longResetsAt {
-                Text("Неделя сбросится: \(Date(timeIntervalSince1970: reset).formatted(date: .abbreviated, time: .shortened))")
+                Text("Сброс \(windowTitle(model.usage.longWindowMinutes, fallback: "длинного окна")): \(Date(timeIntervalSince1970: reset).formatted(date: .abbreviated, time: .shortened))")
             }
-            Button("Обновить лимит") { model.refreshUsage() }
+            Button("Обновить данные") { model.refreshUsage() }
         } label: {
             HStack(spacing: 5) {
-                Image(systemName: "gauge.with.dots.needle.67percent").foregroundStyle(Palette.violetLight)
-                Text(model.usage.shortPercent.map { "\($0)%" } ?? "Лимит")
-                if let long = model.usage.longPercent { Text("· \(long)%").foregroundStyle(Palette.muted) }
+                Image(systemName: "gauge.with.dots.needle.67percent").foregroundStyle(Palette.accent)
+                Text("Лимиты")
             }
             .font(.system(size: 9, weight: .semibold, design: .rounded))
             .foregroundStyle(Palette.text.opacity(0.82))
@@ -510,7 +510,19 @@ struct MainView: View {
             .background(.white.opacity(0.045), in: Capsule())
         }
         .menuStyle(.borderlessButton)
-        .help("Использование Codex для аккаунта \(model.usage.plan)")
+        .help("Общие лимиты Codex для аккаунта \(model.usage.plan)")
+    }
+
+    private func limitSummary(_ used: Int, duration: Int?, fallback: String) -> String {
+        let remaining = max(0, 100 - used)
+        return "\(windowTitle(duration, fallback: fallback)): использовано \(used)% · осталось \(remaining)%"
+    }
+
+    private func windowTitle(_ minutes: Int?, fallback: String) -> String {
+        guard let minutes, minutes > 0 else { return fallback }
+        if minutes % 1_440 == 0 { return "\(minutes / 1_440) дн." }
+        if minutes % 60 == 0 { return "\(minutes / 60) ч" }
+        return "\(minutes) мин"
     }
 
     private func answerBinding(_ id: String) -> Binding<String> {
@@ -533,7 +545,7 @@ private struct FlowButtons: View {
                 Button { choose(option.label) } label: {
                     HStack(spacing: 8) {
                         Image(systemName: selected == option.label ? "largecircle.fill.circle" : "circle")
-                            .foregroundStyle(selected == option.label ? Palette.violetLight : Palette.faint)
+                            .foregroundStyle(selected == option.label ? Palette.accent : Palette.faint)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(option.label).font(.system(size: 11, weight: .medium)).foregroundStyle(Palette.text)
                             if !option.description.isEmpty { Text(option.description).font(.system(size: 9)).foregroundStyle(Palette.muted) }
@@ -542,8 +554,8 @@ private struct FlowButtons: View {
                     }
                     .padding(.horizontal, 10).padding(.vertical, 8)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(selected == option.label ? Palette.violet.opacity(0.14) : .white.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
-                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(selected == option.label ? Palette.violet.opacity(0.40) : .white.opacity(0.08), lineWidth: 1))
+                    .background(selected == option.label ? Palette.accent.opacity(0.14) : .white.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(selected == option.label ? Palette.accent.opacity(0.20) : .white.opacity(0.08), lineWidth: 1))
                 }
                 .buttonStyle(.plain)
             }
@@ -557,7 +569,7 @@ private struct GlassPrimaryButton: ButtonStyle {
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(.white)
             .padding(.horizontal, 13).padding(.vertical, 8)
-            .background(LinearGradient(colors: [Palette.violet.opacity(0.9), Palette.orange.opacity(0.76)], startPoint: .topLeading, endPoint: .bottomTrailing), in: Capsule())
+            .background(Palette.accent.opacity(0.26), in: Capsule())
             .overlay(Capsule().stroke(.white.opacity(0.26), lineWidth: 1))
             .opacity(configuration.isPressed ? 0.8 : 1)
             .scaleEffect(configuration.isPressed ? 0.985 : 1)

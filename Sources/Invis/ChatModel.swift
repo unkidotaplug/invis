@@ -617,16 +617,25 @@ final class ChatModel: ObservableObject {
     private func updateUsage(_ result: [String: Any]) {
         let buckets = result["rateLimitsByLimitId"] as? [String: Any]
         let limits = (buckets?["codex"] as? [String: Any]) ?? (result["rateLimits"] as? [String: Any]) ?? [:]
+        guard !limits.isEmpty else { return }
         if let plan = limits["planType"] as? String { usage.plan = plan.capitalized }
         if let primary = limits["primary"] as? [String: Any] {
             usage.shortPercent = primary["usedPercent"] as? Int
             usage.shortWindowMinutes = primary["windowDurationMins"] as? Int
             usage.shortResetsAt = primary["resetsAt"] as? TimeInterval
+        } else {
+            usage.shortPercent = nil
+            usage.shortWindowMinutes = nil
+            usage.shortResetsAt = nil
         }
         if let secondary = limits["secondary"] as? [String: Any] {
             usage.longPercent = secondary["usedPercent"] as? Int
             usage.longWindowMinutes = secondary["windowDurationMins"] as? Int
             usage.longResetsAt = secondary["resetsAt"] as? TimeInterval
+        } else {
+            usage.longPercent = nil
+            usage.longWindowMinutes = nil
+            usage.longResetsAt = nil
         }
     }
 
